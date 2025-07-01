@@ -85,6 +85,13 @@ in
     alsa.support32Bit = true;
     pulse.enable = true;
     jack.enable = true;
+    extraConfig = {
+      pipewire."90-custom" = {
+        "default.clock.quantum" = 1024;
+        "default.clock.min-quantum" = 512;
+        "default.clock.max-quantum" = 2048;
+      };
+    };
   };
 
   # Enable power management
@@ -211,6 +218,8 @@ in
     ffmpeg
     jack2
     qjackctl
+    libpulseaudio  # Added for PulseAudio compatibility
+    pkgsi686Linux.libpulseaudio  # 32-bit PulseAudio for Steam
 
     # Networking tools
     tcpdump
@@ -234,7 +243,8 @@ in
     steam-run  # For FHS environment
     libva-utils
     obs-studio
-    xdg-desktop-portal-hyprland  # Added for PipeWire screen sharing
+    xdg-desktop-portal-hyprland  # For PipeWire screen sharing
+    steam  # Added to ensure full Steam package
   ];
 
   # Enable Steam
