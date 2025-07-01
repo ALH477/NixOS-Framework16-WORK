@@ -145,6 +145,8 @@ in
     xwayland.enable = true;
   };
 
+ programs.thunar.enable = true;
+
   # Enable fw-fanctrl for fan control with aggressive cooling
   programs.fw-fanctrl = {
     enable = true;
