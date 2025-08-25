@@ -1,59 +1,56 @@
-# Edit this configuration file to define what should be installed on
-# your system. Help is available in the configuration.nix(5) man page
-# and in the NixOS manual (accessible by running ‘nixos-help’).
-
 { config, pkgs, lib, ... }:
 
-let
-  # Prefer nixos-unstable channel, fallback to tarball if channel is unavailable
-  unstable = import <nixos-unstable> {} // (
-    if builtins.pathExists <nixos-unstable> then {}
-    else import (builtins.fetchTarball {
-      url = "https://github.com/NixOS/nixpkgs/archive/nixos-unstable.tar.gz";
-      # Update this sha256 after running nix-prefetch-url if the tarball changes
-      sha256 = "0000000000000000000000000000000000000000000000000000";
-    }) {}
-  );
-in
 {
-  # Define sources for external modules
-  imports = [
-    # Include the results of the hardware scan
-    ./hardware-configuration.nix
-    # Framework 16 hardware module for AMD Ryzen 7040 Series
-    (builtins.fetchTarball {
-      url = "https://github.com/NixOS/nixpkgs-channels/archive/nixos-unstable.tar.gz";
-      sha256 = "005wz7dfk2mmcymqxpi00zgag21bb83bk3wx174hm6nvk1wmqvfs";
-    } + "/framework/16-inch/7040-amd")
-    # fw-fanctrl module
-    (builtins.fetchTarball {
-      url = "https://github.com/TamtamHero/fw-fanctrl/archive/packaging/nix.tar.gz";
-      sha256 = "1rcs2lpj8nmlqqc0if6ykagdg4c6v5g757prvhjgxyynsq2psb35";
-    } + "/nix/module.nix")
+  nixpkgs.overlays = [
+    (final: prev: {
+      unstable = import (fetchTarball {
+        url = "https://github.com/NixOS/nixpkgs/archive/nixos-unstable.tar.gz";
+        sha256 = "sha256-K7g9R2x+3O2/eEa5B2Yq1mIw2IpBrxJsTXnVCI4L2A0=";
+      }) {
+        system = prev.system;
+        config.allowUnfree = true;
+      };
+    })
   ];
 
-  # Bootloader
+  imports = [
+    # Add paths to external modules if needed (e.g., for nixos-hardware, fw-fanctrl, determinate)
+    # Example: <nixos-hardware/framework/16-inch/7040-amd>
+    ./hardware-configuration.nix
+  ];
+
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
-
-  # Use latest kernel for GPU and hardware support
   boot.kernelPackages = pkgs.linuxPackages_latest;
+  boot.kernelParams = [ "amdgpu.abmlevel=0" ];
 
-  # Boot into multi-user target (TTY) instead of graphical
-  services.xserver.enable = false;
-  systemd.defaultUnit = lib.mkForce "multi-user.target";
+  specialisation.realtime.configuration = {
+    boot.kernelPackages = lib.mkOverride 0 pkgs.linuxPackages_rt;
+  };
 
-  # Networking
+  services.xserver.enable = true;
+  services.xserver.displayManager.sddm.enable = true;
+  services.xserver.desktopManager.cinnamon.enable = true;
+  services.xserver.windowManager.dwm.enable = true;
+  programs.hyprland = {
+    enable = true;
+    xwayland.enable = true;
+  };
+  systemd.defaultUnit = lib.mkForce "graphical.target";
+
+  xdg.portal = {
+    enable = true;
+    extraPortals = [ pkgs.xdg-desktop-portal-gtk pkgs.xdg-desktop-portal-hyprland ];
+  };
+
   networking.hostName = "nixos";
   networking.networkmanager.enable = true;
 
-  hardware.bluetooth.enable = true; # enables support for Bluetooth
+  hardware.bluetooth.enable = true;
   hardware.bluetooth.powerOnBoot = true;
 
-  # Time zone
   time.timeZone = "America/Los_Angeles";
 
-  # Internationalisation
   i18n.defaultLocale = "en_US.UTF-8";
   i18n.extraLocaleSettings = {
     LC_ADDRESS = "en_US.UTF-8";
@@ -67,17 +64,10 @@ in
     LC_TIME = "en_US.UTF-8";
   };
 
-  # Enable touchpad support
   services.libinput.enable = true;
-
-  # Enable acpid
   services.acpid.enable = true;
-
-  # Enable CUPS for printing
   services.printing.enable = true;
 
-  # Enable sound with PipeWire
-  services.pulseaudio.enable = false;
   security.rtkit.enable = true;
   services.pipewire = {
     enable = true;
@@ -94,168 +84,79 @@ in
     };
   };
 
-  # Enable power management
+  services.udisks2.enable = true;
+  security.polkit.enable = true;
   services.power-profiles-daemon.enable = true;
-
-  # Enable firmware updates
   services.fwupd.enable = true;
-
-  # Enable redistributable firmware
   hardware.enableRedistributableFirmware = true;
 
-  # Enable OpenGL and Vulkan with latest Mesa from unstable
   hardware.graphics = {
     enable = true;
     enable32Bit = true;
-    package = unstable.mesa;
-    package32 = unstable.pkgsi686Linux.mesa;
-    extraPackages = with unstable; [
-      mesa
-      amdvlk
-      vulkan-loader
-      vulkan-tools
-      vulkan-validation-layers
-      libva
-      libvdpau
+    package = pkgs.unstable.mesa;
+    package32 = pkgs.unstable.pkgsi686Linux.mesa;
+    extraPackages = with pkgs.unstable; [
+      mesa amdvlk vulkan-loader vulkan-tools vulkan-validation-layers libva libvdpau
     ];
-    extraPackages32 = with unstable.pkgsi686Linux; [
-      mesa
-      amdvlk
-      vulkan-loader
-      libva
-      libvdpau
+    extraPackages32 = with pkgs.unstable.pkgsi686Linux; [
+      mesa amdvlk vulkan-loader vulkan-tools vulkan-validation-layers libva libvdpau
     ];
   };
 
-  # Enable Docker
-  virtualisation.docker = {
-    enable = true;
-    enableOnBoot = true;
+  services.fprintd.enable = true;
+  security.pam.services = {
+    login.fprintAuth = true;
+    sudo.fprintAuth = true;
   };
 
-  # Enable Wireshark
-  programs.wireshark = {
-    enable = true;
-    package = pkgs.wireshark;
-  };
-
-  # Enable Hyprland
-  programs.hyprland = {
-    enable = true;
-    xwayland.enable = true;
-  };
-
- programs.thunar.enable = true;
-
-  # Enable fw-fanctrl for fan control with aggressive cooling
-  programs.fw-fanctrl = {
-    enable = true;
-    config = {
-      defaultStrategy = "lazy";
-      strategies = {
-        lazy = {
-          fanSpeedUpdateFrequency = 5;
-          movingAverageInterval = 30;
-          speedCurve = [
-            { temp = 0; speed = 20; }   # Start at 20% speed for better baseline cooling
-            { temp = 50; speed = 20; }  # Maintain 20% up to 50°C
-            { temp = 60; speed = 30; }  # Increase to 30% at 60°C
-            { temp = 65; speed = 40; }  # 40% at 65°C for quicker response
-            { temp = 70; speed = 60; }  # 60% at 70°C for aggressive cooling
-            { temp = 80; speed = 100; } # Full speed at 80°C to prevent overheating
-          ];
-        };
-      };
-    };
-  };
-
-  # User account
   users.users.asher = {
     isNormalUser = true;
     description = "Asher";
-    extraGroups = [ "networkmanager" "wheel" "docker" "wireshark" ];
+    extraGroups = [ "networkmanager" "wheel" "docker" "wireshark" "disk" ];
     shell = pkgs.bash;
-    packages = with pkgs; [];
+    packages = with pkgs; [ ];
   };
 
-  # Allow unfree packages
   nixpkgs.config.allowUnfree = true;
 
-  # System packages
-  environment.systemPackages = with pkgs; [
-    # Core tools
-    vim
-    git
-    htop
-    nvme-cli
-    mangohud
-    lm_sensors
-    s-tui
-    stress
-    dmidecode
-    util-linux
-
-    # Requested packages
-    python3Full
-    python3Packages.pip
-    python3Packages.virtualenv
-    wireshark
-    cmake
-    kdePackages.kdenlive
-    ardour
-    blueberry
-    vesktop
-
-    # Development tools
-    gcc
-    gnumake
-    ninja
-    kitty
-    wofi
-    waybar
-    pavucontrol
-    hyprpaper
-
-    # Multimedia dependencies
-    ffmpeg
-    jack2
-    qjackctl
-    libpulseaudio  # Added for PulseAudio compatibility
-    pkgsi686Linux.libpulseaudio  # 32-bit PulseAudio for Steam
-
-    # Networking tools
-    tcpdump
-    nmap
-
-    # Docker tools
-    docker-compose
-    docker-buildx
-
-    # Gaming and graphics
-    vulkan-tools
-    vulkan-loader
-    vulkan-validation-layers
-    brave
-    dwm
-    hyprland
-    vlc
-    pandoc
-    kdePackages.okular
-    xorg.xinit
-    steam-run  # For FHS environment
-    libva-utils
-    obs-studio
-    xdg-desktop-portal-hyprland  # For PipeWire screen sharing
-    steam  # Added to ensure full Steam package
-  ];
-
-  # Enable Steam
-  programs.steam = {
-    enable = true;
-    extraCompatPackages = with pkgs; [ proton-ge-bin ];
+  systemd.timers.nix-gc-generations = {
+    wantedBy = [ "timers.target" ];
+    timerConfig = {
+      OnCalendar = "weekly";
+      Persistent = true;
+    };
   };
 
-  # JACK configuration for Ardour
+  systemd.services.nix-gc-generations = {
+    script = ''
+      generations_to_delete=$(${pkgs.nix}/bin/nix-env -p /nix/var/nix/profiles/system --list-generations | ${pkgs.gawk}/bin/awk '{print $1}' | ${pkgs.coreutils}/bin/head -n -5 | ${pkgs.coreutils}/bin/tr '\n' ' ')
+      if [ -n "$generations_to_delete" ]; then
+        ${pkgs.nix}/bin/nix-env -p /nix/var/nix/profiles/system --delete-generations $generations_to_delete
+      fi
+      ${pkgs.nix}/bin/nix-collect-garbage
+    '';
+    serviceConfig.Type = "oneshot";
+  };
+
+  environment.systemPackages = with pkgs; [
+    vim git htop nvme-cli mangohud lm_sensors s-tui stress dmidecode util-linux gparted usbutils
+    python3Full python3Packages.pip python3Packages.virtualenv python3Packages.cryptography python3Packages.pycryptodome
+    python3Packages.grpcio python3Packages.grpcio-tools python3Packages.protobuf
+    python3Packages.numpy python3Packages.matplotlib
+    wireshark cmake kdePackages.kdenlive ardour blueberry vesktop audacity font-awesome fastfetch gnugrep scribus
+    gcc gnumake ninja kitty wofi waybar pavucontrol hyprpaper rustc cargo go openssl gnutls qemu virt-manager
+    ffmpeg jack2 qjackctl libpulseaudio pkgsi686Linux.libpulseaudio tcpdump nmap docker-compose docker-buildx
+    vulkan-tools vulkan-loader vulkan-validation-layers brave dwm hyprland vlc pandoc kdePackages.okular xorg.xinit steam-run libva-utils obs-studio xdg-desktop-portal-hyprland steam
+    xfce.thunar xfce.thunar-volman gvfs udiskie polkit_gnome framework-tool brightnessctl
+    gimp inkscape blender libreoffice krita protobufc grpc pkgconf
+    (perl.withPackages (ps: with ps; [ JSON GetoptLong CursesUI ModulePluggable Appcpanminus ]))
+  ];
+
+  programs.steam = {
+    enable = true;
+    extraCompatPackages = [ pkgs.proton-ge-bin ];
+  };
+
   environment.etc."jack/conf.xml".text = ''
     <?xml version="1.0"?>
     <jack>
@@ -266,17 +167,7 @@ in
     </jack>
   '';
 
-  # Configure .xinitrc for dwm
-  environment.etc."xinitrc".text = ''
-    #!/bin/sh
-    exec ${pkgs.dwm}/bin/dwm
-  '';
+  environment.sessionVariables.QT_QPA_PLATFORM = "wayland;xcb";
 
-  # Ensure Qt applications run on Wayland for OBS compatibility
-  environment.sessionVariables = {
-    QT_QPA_PLATFORM = "wayland";
-  };
-
-  # NixOS release version
   system.stateVersion = "25.05";
 }
